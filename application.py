@@ -63,7 +63,7 @@ user_data_storage = {}
 WELCOME_MESSAGE = {
     "type": "text",
     "text": {
-        "body": "Bienvenido(a) a Milkiin.\nEstamos aquí para brindarte la mejor atención.\n\nSelecciona la opción que corresponda a tu necesidad:\n1- Paciente de primera vez\n2- Paciente subsecuente\n3- Atención al cliente\n4- Facturación\n5- Envío de resultados\n6- Dudas, preguntas y cancelaciones\n\nPor favor, responde con el número de la opción que elijas."
+        "body": "Bienvenido(a) a Milkiin.\nEstamos aquí para brindarte la mejor atención.\n\nSelecciona el numero de la opción que corresponda a tu necesidad:\n1- Paciente de primera vez\n2- Paciente subsecuente\n3- Atención al cliente\n4- Facturación\n5- Envío de resultados\n6- Dudas, preguntas y cancelaciones\n\nPor favor, responde con el número de la opción que elijas."
     }
 }
 
