@@ -38,7 +38,7 @@ EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD')
 SMTP_SERVER = 'smtp.gmail.com'
 SMTP_PORT = 465
 
-# === TOKEN DE SEGURIDAD PARA RECORDATORIOS (opcional) ===
+# === TOKEN DE SEGURIDAD PARA RECORDATORIOS (opciónal) ===
 REMINDER_TOKEN = os.environ.get('REMINDER_TOKEN')
 
 # === AUTENTICACIÓN Y SERVICIO DE CALENDAR ===
@@ -63,14 +63,14 @@ user_data_storage = {}
 WELCOME_MESSAGE = {
     "type": "text",
     "text": {
-        "body": "Bienvenido(a) a Milkiin.\nEstamos aquí para brindarte la mejor atención.\n\nSelecciona el numero de la opción que corresponda a tu necesidad:\n1- Paciente de primera vez\n2- Paciente subsecuente\n3- Atención al cliente\n4- Facturación\n5- Envío de resultados\n6- Dudas, preguntas y cancelaciones\n\nPor favor, responde con el número de la opción que elijas."
+        "body": "Bienvenido(a) a Milkiin.\nEstamos aquí para brindarte la mejor atención.\n\nSelecciona el número de la opción que corresponda a tu necesidad:\n1- Paciente de primera vez\n2- Paciente subsecuente\n3- Atención al cliente\n4- Facturación\n5- Envío de resultados\n6- Dudas, preguntas y cancelaciones\n\nPor favor, responde con el número de la opción que elijas."
     }
 }
 
 SERVICIOS_PRIMERA_VEZ = {
     "type": "text",
     "text": {
-        "body": ("Selecciona el numero de servicio de primera vez:\n"
+        "body": ("Selecciona el número de servicio de primera vez:\n"
                  "1. Fertilidad\n"
                  "2. Síndrome de Ovario Poliquístico\n"
                  "3. Chequeo Anual\n"
@@ -88,7 +88,7 @@ SERVICIOS_SUBSECUENTE = {
     }
 }
 
-OTROS_OPCIONES = {
+OTROS_opciónES = {
     "type": "text",
     "text": {
         "body": "Selecciona una opción:\n1️⃣ Espermabiopsia directa\n2️⃣ Ginecología Pediátrica y Adolescentes\n3️⃣ Hablar con América"
@@ -117,7 +117,7 @@ def get_specialist_menu(service_key):
     especialistas_disponibles = ESPECIALISTAS_POR_SERVICIO.get(service_key, [])
     if not especialistas_disponibles:
         return None
-    menu_text = "Selecciona el numero de la opcion que corresponde a tu necesidad:\n"
+    menu_text = "Selecciona el número de la opción que corresponde a tu necesidad:\n"
     for key in especialistas_disponibles:
         menu_text += f"▪️ {key}: {ESPECIALISTAS_NOMBRES[key]}\n"
     return {
@@ -480,12 +480,12 @@ def process_user_message(phone_number, message_body):
             user_data["stage"] = "esperando_nombre_sub"
             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, envía tu nombre completo."}})
         elif message_body == "7":
-            user_data["stage"] = "otros_opciones_sub"
-            send_whatsapp_message(phone_number, OTROS_OPCIONES)
+            user_data["stage"] = "otros_opciónes_sub"
+            send_whatsapp_message(phone_number, OTROS_opciónES)
         else:
             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, elige una opción válida (1-7)."}})
 
-    elif user_data["stage"] == "otros_opciones_sub":
+    elif user_data["stage"] == "otros_opciónes_sub":
         if message_body == "3":
             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Conectando con América... Un miembro del equipo te contactará pronto."}})
             user_data["stage"] = "start"
