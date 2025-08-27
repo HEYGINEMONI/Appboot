@@ -70,14 +70,14 @@ WELCOME_MESSAGE = {
 SERVICIOS_PRIMERA_VEZ = {
     "type": "text",
     "text": {
-        "body": ("Selecciona el servicio de primera vez:\n"
-                 "1️⃣ Fertilidad\n"
-                 "2️⃣ Síndrome de Ovario Poliquístico\n"
-                 "3️⃣ Chequeo Anual\n"
-                 "4️⃣ Embarazo\n"
-                 "5️⃣ Ginecología Pediátrica y Adolescentes\n"
-                 "6️⃣ Revisión de Estudios\n"
-                 "7️⃣ Agendar Espermatobioscopia con América")
+        "body": ("Selecciona el numero de servicio de primera vez:\n"
+                 "1. Fertilidad\n"
+                 "2. Síndrome de Ovario Poliquístico\n"
+                 "3. Chequeo Anual\n"
+                 "4. Embarazo\n"
+                 "5. Ginecología Pediátrica y Adolescentes\n"
+                 "6. Revisión de Estudios\n"
+                 "7. Agendar Espermatobioscopia con América")
     }
 }
 
@@ -117,7 +117,7 @@ def get_specialist_menu(service_key):
     especialistas_disponibles = ESPECIALISTAS_POR_SERVICIO.get(service_key, [])
     if not especialistas_disponibles:
         return None
-    menu_text = "Selecciona tu especialista:\n"
+    menu_text = "Selecciona el numero de la opcion que corresponde a tu necesidad:\n"
     for key in especialistas_disponibles:
         menu_text += f"▪️ {key}: {ESPECIALISTAS_NOMBRES[key]}\n"
     return {
