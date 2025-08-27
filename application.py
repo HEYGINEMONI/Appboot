@@ -630,6 +630,9 @@ def webhook():
             return 'Verificación fallida', 403
     elif request.method == 'POST':
         try:
+            # Línea añadida para depuración
+            print("Datos brutos de la solicitud:", request.get_data())
+            
             data = request.get_json()
             if data.get('entry'):
                 for entry in data['entry']:
