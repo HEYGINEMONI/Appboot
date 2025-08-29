@@ -30,7 +30,7 @@ META_VERIFY_TOKEN = os.environ.get('META_VERIFY_TOKEN') or 'milkiin_verify_token
 # Variables para Google Calendar
 GOOGLE_CALENDAR_CREDENTIALS_JSON = os.environ.get('GOOGLE_CALENDAR_CREDENTIALS')
 GOOGLE_CALENDAR_ID = os.environ.get('GOOGLE_CALENDAR_ID')
-SCOPES = ['https://www.googleapis.com/auth/calendar.events']
+SCOPES = ['https://www.googleapis.com/auth/calendar.events.readonly', 'https://www.googleapis.com/auth/calendar.events']
 
 # === CONFIGURACIÓN DE CORREO ELECTRÓNICO ===
 EMAIL_ADDRESS = os.environ.get('EMAIL_ADDRESS')
@@ -110,14 +110,14 @@ ESPECIALISTAS_POR_SERVICIO = {
     "3": ["1", "2", "3", "4", "5"],
     "4": ["1", "2", "3", "4", "5"],
     "5": ["3"],
-    "6": ["1", "2", "3", "4", "5"]
+    "6": ["1"]
 }
 
 def get_specialist_menu(service_key):
     especialistas_disponibles = ESPECIALISTAS_POR_SERVICIO.get(service_key, [])
     if not especialistas_disponibles:
         return None
-    menu_text = "Selecciona el número de la opción que corresponde a tu necesidad:\n"
+    menu_text = "Selecciona el número de la opción que corresponde a tu espcialista:\n"
     for key in especialistas_disponibles:
         menu_text += f"▪️ {key}: {ESPECIALISTAS_NOMBRES[key]}\n"
     return {
@@ -145,7 +145,7 @@ SERVICIOS_SUB_NOMBRES = {
     "7": "Otros"
 }
 
-# CORRECCIÓN: Duraciones de cita para primera vez según el PDF
+# Duraciones de cita para primera vez
 DURACIONES_PRIMERA_VEZ = {
     "1": 30, # Fertilidad - 30 minutos
     "2": 60, # Síndrome de Ovario Poliquístico - 60 minutos
@@ -155,7 +155,7 @@ DURACIONES_PRIMERA_VEZ = {
     "6": 30  # Revisión de Estudios - 30 minutos
 }
 
-# CORRECCIÓN: Duraciones de cita para subsecuente según el PDF
+# Duraciones de cita para subsecuente
 DURACIONES_SUBSECUENTE = {
     "1": 30, # Fertilidad - 30 minutos
     "2": 45, # Síndrome de Ovario Poliquístico - 45 minutos
@@ -164,6 +164,18 @@ DURACIONES_SUBSECUENTE = {
     "5": 30, # Revisión de estudios - 30 minutos
     "6": 30, # Seguimiento folicular - 30 minutos
     "7": 30  # Otros - 30 minutos
+}
+
+# Horarios de la clínica por día (Lunes a Sábado)
+# Horario de Lunes a Viernes 9:00 - 19:00 (con pausa para comida 13:00 - 14:00)
+# Sábado 10:00 - 11:30
+HORARIOS_POR_DIA = {
+    0: [('09:00', '13:00'), ('14:00', '19:00')],  # Lunes
+    1: [('09:00', '19:00')],  # Martes
+    2: [('15:00', '20:00')],  # Miércoles
+    3: [('09:00', '12:00'), ('15:00', '18:00')],  # Jueves
+    4: [('09:00', '15:00')],  # Viernes
+    5: [('10:00', '11:30')]   # Sábado
 }
 
 COSTOS = {
@@ -294,6 +306,86 @@ def crear_evento_google_calendar(resumen, inicio, duracion_minutos, descripcion)
     except Exception as e:
         print(f"❌ Error desconocido: {e}")
         return None
+
+def get_available_slots(date_str, duration_minutes):
+    try:
+        service = get_calendar_service()
+        if not service:
+            return []
+
+        date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        day_of_week = date.weekday()
+        
+        horarios_disponibles = HORARIOS_POR_DIA.get(day_of_week, [])
+        if not horarios_disponibles:
+            return []
+
+        start_of_day = datetime.combine(date, datetime.min.time()).isoformat() + 'Z'
+        end_of_day = datetime.combine(date, datetime.max.time()).isoformat() + 'Z'
+
+        events_result = service.events().list(
+            calendarId=GOOGLE_CALENDAR_ID,
+            timeMin=start_of_day,
+            timeMax=end_of_day,
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        
+        events = events_result.get('items', [])
+        
+        occupied_slots = []
+        for event in events:
+            start_time = event['start'].get('dateTime', event['start'].get('date'))
+            end_time = event['end'].get('dateTime', event['end'].get('date'))
+            if start_time and end_time:
+                occupied_slots.append((
+                    datetime.fromisoformat(start_time.replace('Z', '+00:00')).astimezone().replace(tzinfo=None),
+                    datetime.fromisoformat(end_time.replace('Z', '+00:00')).astimezone().replace(tzinfo=None)
+                ))
+
+        available_slots = []
+        for start_time_str, end_time_str in horarios_disponibles:
+            current_time = datetime.combine(date, datetime.strptime(start_time_str, "%H:%M").time())
+            end_of_period = datetime.combine(date, datetime.strptime(end_time_str, "%H:%M").time())
+            
+            while current_time + timedelta(minutes=duration_minutes) <= end_of_period:
+                is_available = True
+                proposed_end_time = current_time + timedelta(minutes=duration_minutes)
+                
+                for occupied_start, occupied_end in occupied_slots:
+                    if (current_time < occupied_end and proposed_end_time > occupied_start):
+                        is_available = False
+                        current_time = occupied_end
+                        break
+                
+                if is_available:
+                    available_slots.append(current_time)
+                    current_time += timedelta(minutes=duration_minutes)
+                else:
+                    # Si no hay espacio, avanza al siguiente bloque después del evento ocupado
+                    # para evitar ciclos infinitos si un evento bloquea la hora actual.
+                    if current_time < end_of_period:
+                        next_available = current_time + timedelta(minutes=duration_minutes)
+                        # Busca el siguiente espacio después del evento que causó el conflicto
+                        for occupied_start, occupied_end in occupied_slots:
+                            if next_available < occupied_start:
+                                current_time = next_available
+                                break
+                            current_time = occupied_end
+                        else:
+                            # Si no se encontró ningún evento que cause conflicto, avanza normalmente
+                            current_time = next_available
+                    else:
+                        break
+        
+        # Limpiar duplicados y ordenar
+        available_slots = sorted(list(set(available_slots)))
+        
+        return [slot.strftime("%H:%M") for slot in available_slots]
+
+    except Exception as e:
+        print(f"❌ Error al obtener disponibilidad: {e}")
+        return []
 
 # === ENVÍO DE CORREO ===
 def send_appointment_email(recipient_email, clinic_email, service_name, patient_name, patient_phone, patient_dob, patient_age, doctor_name, appointment_date, appointment_time):
@@ -452,26 +544,76 @@ def process_user_message(phone_number, message_body):
                              "⚠️ Por favor, envía tu comprobante de pago en este mismo chat para poder continuar con la agenda.")}}
             send_whatsapp_message(phone_number, pago_info)
             user_data["stage"] = "esperando_comprobante"
+            user_data["timestamp"] = datetime.now()
         else:
             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "El formato del correo es incorrecto. Por favor, inténtalo de nuevo."}})
 
     elif user_data["stage"] == "esperando_comprobante":
-        send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "✅ Comprobante recibido. ¡Gracias! Ahora, vamos a agendar."}})
-        
-        servicio_key = user_data.get("servicio", "1")
-        duracion = DURACIONES_PRIMERA_VEZ.get(servicio_key, 60)
-        
-        mensaje_duracion = (f"La duración de esta cita es de {duracion} minutos.\n"
-                            "Nuestros horarios generales son:\n"
-                            "Lunes: 9:00–13:00 y 14:00-19:00\n"
-                            "Miércoles: 15:00–20:00\n"
-                            "Jueves: 9:00–12:00 y 15:00–18:00\n"
-                            "Viernes: 9:00–15:00\n"
-                            "Sábado: 10:00–11:30 (solo algunos servicios)\n\n"
-                            "Por favor, indica la fecha y hora que deseas para tu cita (ej: 2025-09-15 10:00). Verificaremos la disponibilidad.")
-                            
-        send_whatsapp_message(phone_number, {"type": "text", "text": {"body": mensaje_duracion}})
-        user_data["stage"] = "esperando_fecha"
+        # Este estado ahora espera un archivo, no un mensaje de texto.
+        # Si llega un mensaje de texto, es una entrada inválida.
+        send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "❌ Por favor, sube un archivo (imagen o PDF) como comprobante de pago, no texto."}})
+
+    elif user_data["stage"] == "esperando_fecha_disponibilidad":
+        try:
+            fecha_str = message_body.strip()
+            datetime.strptime(fecha_str, "%Y-%m-%d") # Validar formato
+            
+            servicio_key = user_data.get("servicio", "1")
+            duracion = DURACIONES_PRIMERA_VEZ.get(servicio_key, 60)
+            
+            available_slots = get_available_slots(fecha_str, duracion)
+            
+            if available_slots:
+                slots_text = "\n".join([f"⏰ {slot}" for slot in available_slots])
+                user_info["fecha_elegida"] = fecha_str
+                user_data_storage[phone_number] = user_info
+                
+                menu_disponibilidad = {"type": "text", "text": {"body": f"✅ Horarios disponibles para el {fecha_str}:\n\n{slots_text}\n\nPor favor, responde con la hora que prefieras (ej: 10:00)."}}
+                send_whatsapp_message(phone_number, menu_disponibilidad)
+                user_data["stage"] = "esperando_hora"
+            else:
+                send_whatsapp_message(phone_number, {"type": "text", "text": {"body": f"❌ Lo sentimos, no hay horarios disponibles para el {fecha_str}. Por favor, elige otra fecha."}})
+        except ValueError:
+            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, envía la fecha en formato AAAA-MM-DD. Ej: 2025-09-15"}})
+
+    elif user_data["stage"] == "esperando_hora":
+        try:
+            hora_str = message_body.strip()
+            fecha_str = user_info.get("fecha_elegida")
+            if not fecha_str:
+                raise ValueError("Fecha no guardada en el estado.")
+            
+            fecha_hora = datetime.strptime(f"{fecha_str} {hora_str}", "%Y-%m-%d %H:%M")
+
+            servicio_key = user_data.get("servicio", "1")
+            duracion = DURACIONES_PRIMERA_VEZ.get(servicio_key, 60)
+            servicio_nombre = SERVICIOS_NOMBRES.get(servicio_key, "Consulta")
+            especialista_key = user_data.get("especialista", "1")
+            especialista_nombre = ESPECIALISTAS_NOMBRES.get(especialista_key, "No definido")
+            nombre_paciente = user_info.get('nombre', 'Paciente Anónimo')
+
+            descripcion = f"Paciente: {nombre_paciente}\nTeléfono: {user_info.get('telefono', 'No proporcionado')}\nServicio: {servicio_nombre}\nEspecialista: {especialista_nombre}".strip()
+
+            crear_evento_google_calendar(
+                f"Cita - {servicio_nombre} con {especialista_nombre}",
+                fecha_hora, duracion, descripcion
+            )
+            send_appointment_email(
+                user_info.get('correo'), EMAIL_ADDRESS, servicio_nombre, nombre_paciente,
+                user_info.get('telefono'), user_info.get('fecha_nacimiento'),
+                user_info.get('edad'), especialista_nombre,
+                fecha_hora.strftime("%Y-%m-%d"), fecha_hora.strftime("%H:%M")
+            )
+
+            send_whatsapp_message(phone_number, CONFIRMACION)
+            cita_detalle = {"type": "text", "text": {"body": f"📅 CONFIRMACIÓN DE CITA\n\nServicio: {servicio_nombre}\nEspecialista: {especialista_nombre}\nFecha y hora: {fecha_hora.strftime('%Y-%m-%d %H:%M')}\nDuración estimada: {duracion} minutos"}}
+            send_whatsapp_message(phone_number, cita_detalle)
+            
+            if phone_number in user_state: del user_state[phone_number]
+            if phone_number in user_data_storage: del user_data_storage[phone_number]
+
+        except ValueError:
+            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, envía la hora en formato HH:MM.\nEj: 10:00"}})
 
     # === SUBSECUENTE (sin cambios) ===
     elif user_data["stage"] == "servicio_subsecuente":
@@ -528,41 +670,6 @@ def process_user_message(phone_number, message_body):
         else:
             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "El formato del correo es incorrecto. Por favor, inténtalo de nuevo."}})
     
-    # === AGENDAR CITA (PRIMERA VEZ) ===
-    elif user_data["stage"] == "esperando_fecha":
-        try:
-            fecha_hora_str = message_body.strip()
-            fecha_hora = datetime.strptime(fecha_hora_str, "%Y-%m-%d %H:%M")
-            servicio_key = user_data.get("servicio", "1")
-            duracion = DURACIONES_PRIMERA_VEZ.get(servicio_key, 60)
-            servicio_nombre = SERVICIOS_NOMBRES.get(servicio_key, "Consulta")
-            especialista_key = user_data.get("especialista", "1")
-            especialista_nombre = ESPECIALISTAS_NOMBRES.get(especialista_key, "No definido")
-            nombre_paciente = user_info.get('nombre', 'Paciente Anónimo')
-
-            descripcion = f"Paciente: {nombre_paciente}\nTeléfono: {user_info.get('telefono', 'No proporcionado')}\nServicio: {servicio_nombre}\nEspecialista: {especialista_nombre}".strip()
-
-            crear_evento_google_calendar(
-                f"Cita - {servicio_nombre} con {especialista_nombre}",
-                fecha_hora, duracion, descripcion
-            )
-            send_appointment_email(
-                user_info.get('correo'), EMAIL_ADDRESS, servicio_nombre, nombre_paciente,
-                user_info.get('telefono'), user_info.get('fecha_nacimiento'),
-                user_info.get('edad'), especialista_nombre,
-                fecha_hora.strftime("%Y-%m-%d"), fecha_hora.strftime("%H:%M")
-            )
-
-            send_whatsapp_message(phone_number, CONFIRMACION)
-            cita_detalle = {"type": "text", "text": {"body": f"📅 CONFIRMACIÓN DE CITA\n\nServicio: {servicio_nombre}\nEspecialista: {especialista_nombre}\nFecha y hora: {fecha_hora_str}\nDuración estimada: {duracion} minutos"}}
-            send_whatsapp_message(phone_number, cita_detalle)
-            
-            if phone_number in user_state: del user_state[phone_number]
-            if phone_number in user_data_storage: del user_data_storage[phone_number]
-
-        except ValueError:
-            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, envía la fecha y hora en formato: AAAA-MM-DD HH:MM\nEj: 2025-04-05 10:00"}})
-
     # === AGENDAR CITA (SUBSECUENTE) ===
     elif user_data["stage"] == "esperando_fecha_sub":
         try:
@@ -630,9 +737,7 @@ def webhook():
             return 'Verificación fallida', 403
     elif request.method == 'POST':
         try:
-            # Línea añadida para depuración
             print("Datos brutos de la solicitud:", request.get_data())
-            
             data = request.get_json()
             if data.get('entry'):
                 for entry in data['entry']:
@@ -640,13 +745,36 @@ def webhook():
                         if change.get('value', {}).get('messages'):
                             for message in change['value']['messages']:
                                 phone_number = message['from']
-                                # Adaptar para manejar imágenes en el futuro
+                                
+                                # Lógica para manejar el comprobante de pago
+                                if user_state.get(phone_number, {}).get("stage") == "esperando_comprobante":
+                                    # Reiniciar si excede el tiempo de 5 minutos
+                                    timestamp = user_state[phone_number].get("timestamp")
+                                    if timestamp and (datetime.now() - timestamp).total_seconds() > 300:
+                                        send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "⏰ Tu tiempo para enviar el comprobante ha expirado. Por favor, reinicia la conversación."}})
+                                        if phone_number in user_state: del user_state[phone_number]
+                                        return 'EVENT_RECEIVED', 200
+
+                                    # Obtener el tipo de mensaje
+                                    mime_type = None
+                                    if message.get('image'):
+                                        mime_type = message['image']['mime_type']
+                                    elif message.get('document'):
+                                        mime_type = message['document']['mime_type']
+
+                                    if mime_type and (mime_type in ["image/png", "image/jpeg", "image/jpg", "application/pdf"]):
+                                        user_state[phone_number]["stage"] = "esperando_fecha_disponibilidad"
+                                        send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "✅ Comprobante recibido. ¡Gracias! Ahora, por favor, indícanos la fecha de tu preferencia para la cita (ej: 2025-09-15)."}})
+                                        return 'EVENT_RECEIVED', 200
+                                    elif mime_type:
+                                        send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "❌ El formato del archivo no es válido. Por favor, sube una imagen (PNG, JPG) o un PDF."}})
+                                        return 'EVENT_RECEIVED', 200
+                                
+                                # Procesar mensajes de texto si no están en el estado 'esperando_comprobante'
                                 message_body = message.get('text', {}).get('body', '')
-                                if not message_body:
-                                    # Aquí se podría manejar si es una imagen, audio, etc.
-                                    # Si el estado es 'esperando_comprobante', se procesaría aquí.
-                                    pass
-                                process_user_message(phone_number, message_body)
+                                if message_body:
+                                    process_user_message(phone_number, message_body)
+
             return 'EVENT_RECEIVED', 200
         except Exception as e:
             print(f"❌ Error en webhook: {e}")
