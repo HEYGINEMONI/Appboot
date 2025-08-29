@@ -43,6 +43,7 @@ REMINDER_TOKEN = os.environ.get('REMINDER_TOKEN')
 
 # === AUTENTICACIÓN Y SERVICIO DE CALENDAR ===
 def get_calendar_service():
+    print("DEBUG: Intentando inicializar el servicio de Google Calendar...")
     try:
         info = json.loads(GOOGLE_CALENDAR_CREDENTIALS_JSON)
         credentials = service_account.Credentials.from_service_account_info(
@@ -50,6 +51,7 @@ def get_calendar_service():
             scopes=SCOPES
         )
         service = build('calendar', 'v3', credentials=credentials)
+        print("DEBUG: ✅ Servicio de Google Calendar inicializado con éxito.")
         return service
     except (json.JSONDecodeError, HttpError) as e:
         print(f"❌ Error al inicializar el servicio de Google Calendar: {e}")
@@ -306,9 +308,13 @@ def crear_evento_google_calendar(resumen, inicio, duracion_minutos, descripcion)
         return None
         
 def get_available_slots(date_str, duration_minutes):
+    print(f"DEBUG: Buscando horarios disponibles para la fecha {date_str} con duración de {duration_minutes} minutos.")
+    print(f"DEBUG: Google Calendar ID: {GOOGLE_CALENDAR_ID}")
+
     try:
         service = get_calendar_service()
         if not service:
+            print("DEBUG: El servicio de calendario no se pudo inicializar. Retornando lista vacía.")
             return []
 
         date = datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -316,6 +322,7 @@ def get_available_slots(date_str, duration_minutes):
         
         horarios_disponibles = HORARIOS_POR_DIA.get(day_of_week, [])
         if not horarios_disponibles:
+            print(f"DEBUG: No hay horarios de atención configurados para el día {date.strftime('%A')}.")
             return []
 
         start_of_day = datetime.combine(date, time.min).isoformat() + 'Z'
@@ -330,6 +337,7 @@ def get_available_slots(date_str, duration_minutes):
         ).execute()
         
         events = events_result.get('items', [])
+        print(f"DEBUG: Eventos encontrados en el calendario para esa fecha: {len(events)}")
         
         occupied_slots = []
         for event in events:
@@ -362,6 +370,7 @@ def get_available_slots(date_str, duration_minutes):
                 
                 current_time += timedelta(minutes=duration_minutes)
         
+        print(f"DEBUG: Slots disponibles calculados: {len(available_slots)}")
         return [slot.strftime("%H:%M") for slot in sorted(list(set(available_slots)))]
 
     except Exception as e:
