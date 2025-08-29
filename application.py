@@ -361,7 +361,8 @@ def get_available_slots(date_str, duration_minutes):
                 
                 if is_available:
                     available_slots.append(current_time)
-                    current_time += timedelta(minutes=duration_minutes)
+                
+                current_time += timedelta(minutes=duration_minutes)
         
         return [slot.strftime("%H:%M") for slot in sorted(list(set(available_slots)))]
 
@@ -457,7 +458,7 @@ def process_user_message(phone_number, message_body, is_media=False):
             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "1. COSTOS\n2. Hablar con América"}})
         elif message_body == "4":
             user_data["stage"] = "facturacion"
-            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "1. Requiero factura\n2. Dudas"}})
+            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "1. Requiero factura\n2. Dudas de Facturacion"}})
         elif message_body == "5":
             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Para el envío de resultados, envíalos al correo:\n📧 nicontacto@heyginemoni.com"}})
             user_data["stage"] = "start"
@@ -727,10 +728,9 @@ def process_user_message(phone_number, message_body, is_media=False):
             duracion = DURACIONES_SUBSECUENTE.get(servicio_key, 45)
             servicio_nombre = SERVICIOS_SUB_NOMBRES.get(servicio_key, "Consulta")
             nombre_paciente = user_info.get('nombre', 'Paciente Anónimo')
-            especialista_key = user_data.get("especialista", "1")
-            especialista_nombre = ESPECIALISTAS_NOMBRES.get(especialista_key, "No definido")
+            especialista_nombre = "Por definir"
 
-            descripcion = f"Paciente: {nombre_paciente}\nTeléfono: {user_info.get('telefono', 'No proporcionado')}\nServicio: {servicio_nombre}\nEspecialista: {especialista_nombre}".strip()
+            descripcion = f"Paciente: {nombre_paciente}\nTeléfono: {user_info.get('telefono', 'No proporcionado')}\nServicio: {servicio_nombre}".strip()
 
             crear_evento_google_calendar(
                 f"Cita - {servicio_nombre} (Subsecuente)",
@@ -743,7 +743,7 @@ def process_user_message(phone_number, message_body, is_media=False):
                 fecha_hora.strftime("%Y-%m-%d"), fecha_hora.strftime("%H:%M")
             )
             send_whatsapp_message(phone_number, CONFIRMACION)
-            cita_detalle = {"type": "text", "text": {"body": f"📅 CONFIRMACIÓN DE CITA\n\nServicio: {servicio_nombre}\nEspecialista: {especialista_nombre}\nFecha y hora: {fecha_hora_str}\nDuración estimada: {duracion} minutos"}}
+            cita_detalle = {"type": "text", "text": {"body": f"📅 CONFIRMACIÓN DE CITA\n\nServicio: {servicio_nombre}\nFecha y hora: {fecha_hora_str}\nDuración estimada: {duracion} minutos"}}
             send_whatsapp_message(phone_number, cita_detalle)
 
             if phone_number in user_state: del user_state[phone_number]
@@ -786,7 +786,9 @@ def webhook():
             return 'Verificación fallida', 403
     elif request.method == 'POST':
         try:
+            # Línea añadida para depuración
             print("Datos brutos de la solicitud:", request.get_data())
+            
             data = request.get_json()
             if data.get('entry'):
                 for entry in data['entry']:
