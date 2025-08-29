@@ -84,14 +84,14 @@ SERVICIOS_PRIMERA_VEZ = {
 SERVICIOS_SUBSECUENTE = {
     "type": "text",
     "text": {
-        "body": "Selecciona el servicio subsecuente:\n1. Fertilidad\n2. Síndrome de Ovario Poliquístico\n3. Chequeo Anual\n4. Embarazo\n5. Revisión de estudios\n6. Seguimiento folicular\n7. Otros"
+        "body": "Selecciona el servicio subsecuente:\n1️1 Fertilidad\n2️2 Síndrome de Ovario Poliquístico\n3️3 Chequeo Anual\n4️ Embarazo\n5️5 Revisión de estudios\n6️6 Seguimiento folicular\n7️7 Otros"
     }
 }
 
 OTROS_opciónES = {
     "type": "text",
     "text": {
-        "body": "Selecciona una opción:\n1. Espermabiopsia directa\n2. Ginecología Pediátrica y Adolescentes\n3. Hablar con América"
+        "body": "Selecciona una opción:\n1️1 Espermabiopsia directa\n2️2 Ginecología Pediátrica y Adolescentes\n3️3 Hablar con América"
     }
 }
 
@@ -306,7 +306,7 @@ def crear_evento_google_calendar(resumen, inicio, duracion_minutos, descripcion)
     except Exception as e:
         print(f"❌ Error desconocido: {e}")
         return None
-
+        
 def get_available_slots(date_str, duration_minutes):
     try:
         service = get_calendar_service()
