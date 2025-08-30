@@ -306,7 +306,7 @@ def crear_evento_google_calendar(resumen, inicio, duracion_minutos, descripcion)
     except Exception as e:
         print(f"❌ Error desconocido: {e}")
         return None
-        
+
 def get_available_slots(date_str, duration_minutes):
     print(f"DEBUG: Buscando horarios disponibles para la fecha {date_str} con duración de {duration_minutes} minutos.")
     print(f"DEBUG: Google Calendar ID: {GOOGLE_CALENDAR_ID}")
@@ -321,6 +321,8 @@ def get_available_slots(date_str, duration_minutes):
         day_of_week = date.weekday()
         
         horarios_disponibles = HORARIOS_POR_DIA.get(day_of_week, [])
+        print(f"DEBUG: Horarios de la clínica para el día {date.strftime('%A')} ({day_of_week}): {horarios_disponibles}")
+        
         if not horarios_disponibles:
             print(f"DEBUG: No hay horarios de atención configurados para el día {date.strftime('%A')}.")
             return []
@@ -367,8 +369,9 @@ def get_available_slots(date_str, duration_minutes):
                 
                 if is_available:
                     available_slots.append(current_time)
-                
-                current_time += timedelta(minutes=duration_minutes)
+                    current_time += timedelta(minutes=duration_minutes) # Avanza solo si el slot está disponible
+                else:
+                    current_time += timedelta(minutes=15) # Avanza en un pequeño intervalo para no entrar en un bucle infinito
         
         print(f"DEBUG: Slots disponibles calculados: {len(available_slots)}")
         return [slot.strftime("%H:%M") for slot in sorted(list(set(available_slots)))]
