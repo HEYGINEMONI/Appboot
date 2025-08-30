@@ -43,7 +43,6 @@ REMINDER_TOKEN = os.environ.get('REMINDER_TOKEN')
 
 # === AUTENTICACIÓN Y SERVICIO DE CALENDAR ===
 def get_calendar_service():
-    print("DEBUG: Intentando inicializar el servicio de Google Calendar...")
     try:
         info = json.loads(GOOGLE_CALENDAR_CREDENTIALS_JSON)
         credentials = service_account.Credentials.from_service_account_info(
@@ -51,7 +50,6 @@ def get_calendar_service():
             scopes=SCOPES
         )
         service = build('calendar', 'v3', credentials=credentials)
-        print("DEBUG: ✅ Servicio de Google Calendar inicializado con éxito.")
         return service
     except (json.JSONDecodeError, HttpError) as e:
         print(f"❌ Error al inicializar el servicio de Google Calendar: {e}")
@@ -86,14 +84,14 @@ SERVICIOS_PRIMERA_VEZ = {
 SERVICIOS_SUBSECUENTE = {
     "type": "text",
     "text": {
-        "body": "Selecciona el servicio subsecuente:\n1️ Fertilidad\n2️ Síndrome de Ovario Poliquístico\n3️ Chequeo Anual\n4️ Embarazo\n5️ Revisión de estudios\n6️ Seguimiento folicular\n7️ Otros"
+        "body": "Selecciona el servicio subsecuente:\n1️1 Fertilidad\n2️2 Síndrome de Ovario Poliquístico\n3️3 Chequeo Anual\n4️ Embarazo\n5️5 Revisión de estudios\n6️6 Seguimiento folicular\n7️7 Otros"
     }
 }
 
 OTROS_opciónES = {
     "type": "text",
     "text": {
-        "body": "Selecciona una opción:\n1️ Espermabiopsia directa\n2️ Ginecología Pediátrica y Adolescentes\n3️ Hablar con América"
+        "body": "Selecciona una opción:\n1️1 Espermabiopsia directa\n2️2 Ginecología Pediátrica y Adolescentes\n3️3 Hablar con América"
     }
 }
 
@@ -168,10 +166,12 @@ DURACIONES_SUBSECUENTE = {
     "7": 30  # Otros - 30 minutos
 }
 
-# === NUEVOS HORARIOS DE LA CLÍNICA POR DÍA ===
+# Horarios de la clínica por día (Lunes a Sábado)
+# Horario de Lunes a Viernes 9:00 - 19:00 (con pausa para comida 13:00 - 14:00)
+# Sábado 10:00 - 11:30
 HORARIOS_POR_DIA = {
-    0: [('09:00', '14:00'), ('15:00', '19:00')],  # Lunes: 9:00-14:00 y 15:00-19:00
-    1: [], # Martes - No proporcionaste horario, se asume cerrado.
+    0: [('09:00', '13:00'), ('14:00', '19:00')],  # Lunes
+    1: [('09:00', '19:00')],  # Martes
     2: [('15:00', '20:00')],  # Miércoles
     3: [('09:00', '12:00'), ('15:00', '18:00')],  # Jueves
     4: [('09:00', '15:00')],  # Viernes
@@ -306,25 +306,18 @@ def crear_evento_google_calendar(resumen, inicio, duracion_minutos, descripcion)
     except Exception as e:
         print(f"❌ Error desconocido: {e}")
         return None
-
+        
 def get_available_slots(date_str, duration_minutes):
-    print(f"DEBUG: Buscando horarios disponibles para la fecha {date_str} con duración de {duration_minutes} minutos.")
-    print(f"DEBUG: Google Calendar ID: {GOOGLE_CALENDAR_ID}")
-
     try:
         service = get_calendar_service()
         if not service:
-            print("DEBUG: El servicio de calendario no se pudo inicializar. Retornando lista vacía.")
             return []
 
         date = datetime.strptime(date_str, "%Y-%m-%d").date()
         day_of_week = date.weekday()
         
         horarios_disponibles = HORARIOS_POR_DIA.get(day_of_week, [])
-        print(f"DEBUG: Horarios de la clínica para el día {date.strftime('%A')} ({day_of_week}): {horarios_disponibles}")
-        
         if not horarios_disponibles:
-            print(f"DEBUG: No hay horarios de atención configurados para el día {date.strftime('%A')}.")
             return []
 
         start_of_day = datetime.combine(date, time.min).isoformat() + 'Z'
@@ -339,7 +332,6 @@ def get_available_slots(date_str, duration_minutes):
         ).execute()
         
         events = events_result.get('items', [])
-        print(f"DEBUG: Eventos encontrados en el calendario para esa fecha: {len(events)}")
         
         occupied_slots = []
         for event in events:
@@ -369,11 +361,9 @@ def get_available_slots(date_str, duration_minutes):
                 
                 if is_available:
                     available_slots.append(current_time)
-                    current_time += timedelta(minutes=duration_minutes) # Avanza solo si el slot está disponible
-                else:
-                    current_time += timedelta(minutes=15) # Avanza en un pequeño intervalo para no entrar en un bucle infinito
+                
+                current_time += timedelta(minutes=duration_minutes)
         
-        print(f"DEBUG: Slots disponibles calculados: {len(available_slots)}")
         return [slot.strftime("%H:%M") for slot in sorted(list(set(available_slots)))]
 
     except Exception as e:
@@ -447,9 +437,12 @@ def process_user_message(phone_number, message_body, is_media=False):
             if phone_number in user_state: del user_state[phone_number]
             return
 
+    # Reiniciar la conversación si el usuario dice "hola"
     if message_body.lower() == "hola" and user_data["stage"] != "start":
         user_data["stage"] = "start"
+        if phone_number in user_data_storage: del user_data_storage[phone_number]
     
+    # === Lógica de la conversación ===
     if user_data["stage"] == "start":
         send_whatsapp_message(phone_number, WELCOME_MESSAGE)
         user_data["stage"] = "option_selected"
@@ -463,6 +456,7 @@ def process_user_message(phone_number, message_body, is_media=False):
             user_data["tipo"] = "subsecuente"
             user_data["stage"] = "servicio_subsecuente"
             send_whatsapp_message(phone_number, SERVICIOS_SUBSECUENTE)
+        # Aquí puedes manejar las otras opciones (3-6) como lo hacías antes
         elif message_body == "3":
             user_data["stage"] = "atencion_cliente"
             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "1. COSTOS\n2. Hablar con América"}})
@@ -478,21 +472,20 @@ def process_user_message(phone_number, message_body, is_media=False):
         else:
             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, selecciona una opción válida del 1 al 6."}})
 
-    # === PRIMERA VEZ (FLUJO ACTUALIZADO CON DISPONIBILIDAD) ===
+    # === Flujo de primera vez ===
     elif user_data["stage"] == "servicio_primera":
-        if message_body == "7":
-            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Claro, en un momento uno de nuestros asesores te atenderá para agendar tu cita de Espermatobioscopia. Gracias por tu paciencia."}})
-            if phone_number in user_state: del user_state[phone_number]
-            if phone_number in user_data_storage: del user_data_storage[phone_number]
-        elif message_body in ["1", "2", "3", "4", "5", "6"]:
+        if message_body in ["1", "2", "3", "4", "5", "6"]:
             user_data["servicio"] = message_body
             user_data["stage"] = "esperando_especialista"
             especialista_menu = get_specialist_menu(message_body)
             if especialista_menu:
                 send_whatsapp_message(phone_number, especialista_menu)
             else:
-                send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Lo sentimos, no hay especialistas disponibles para este servicio en este momento."}})
+                send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Lo sentimos, no hay especialistas disponibles para este servicio."}})
                 user_data["stage"] = "start"
+        elif message_body == "7":
+            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Claro, en un momento uno de nuestros asesores te atenderá para agendar tu cita de Espermatobioscopia. Gracias."}})
+            user_data["stage"] = "start"
         else:
             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, elige una opción válida (1-7)."}})
 
@@ -507,34 +500,40 @@ def process_user_message(phone_number, message_body, is_media=False):
     
     elif user_data["stage"] == "esperando_nombre":
         user_info["nombre"] = message_body.strip()
-        user_data_storage[phone_number] = user_info
         user_data["stage"] = "esperando_telefono"
+        user_data_storage[phone_number] = user_info
         send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Gracias. Ahora tu número de teléfono."}})
 
     elif user_data["stage"] == "esperando_telefono":
-        user_info["telefono"] = message_body.strip()
-        user_data_storage[phone_number] = user_info
-        user_data["stage"] = "esperando_fecha_nacimiento"
-        send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Tu fecha de nacimiento (DD-MM-AAAA)."}})
+        if re.match(r'^\d{10,}$', re.sub(r'\D', '', message_body)):
+            user_info["telefono"] = re.sub(r'\D', '', message_body)
+            user_data["stage"] = "esperando_fecha_nacimiento"
+            user_data_storage[phone_number] = user_info
+            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Tu fecha de nacimiento (DD-MM-AAAA)."}})
+        else:
+            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, ingresa un número de teléfono válido (al menos 10 dígitos)."}})
 
     elif user_data["stage"] == "esperando_fecha_nacimiento":
         user_info["fecha_nacimiento"] = message_body.strip()
-        user_data_storage[phone_number] = user_info
         user_data["stage"] = "esperando_edad"
+        user_data_storage[phone_number] = user_info
         send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Y por último, tu edad."}})
     
     elif user_data["stage"] == "esperando_edad":
-        user_info["edad"] = message_body.strip()
-        user_data_storage[phone_number] = user_info
-        user_data["stage"] = "esperando_correo"
-        send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Perfecto. Necesitamos tu correo electrónico para enviarte la confirmación."}})
+        if message_body.isdigit():
+            user_info["edad"] = message_body.strip()
+            user_data["stage"] = "esperando_correo"
+            user_data_storage[phone_number] = user_info
+            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Perfecto. Necesitamos tu correo electrónico para enviarte la confirmación."}})
+        else:
+            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, ingresa tu edad en números."}})
 
     elif user_data["stage"] == "esperando_correo":
         email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', message_body)
         if email_match:
             user_info["correo"] = email_match.group(0)
+            user_data["stage"] = "esperando_comprobante"
             user_data_storage[phone_number] = user_info
-            
             pago_info = {"type": "text", "text": {"body": ("Te compartimos una información importante: 📌\n"
                              "Para consultas de primera vez, solicitamos un anticipo de $500 MXN. El monto restante se cubrirá el día de tu consulta.\n"
                              "Esta medida nos permite asegurar tu lugar, ya que contamos con alta demanda.\n\n"
@@ -544,16 +543,15 @@ def process_user_message(phone_number, message_body, is_media=False):
                              "CLABE: 012180004848287122\n\n"
                              "⚠️ Por favor, envía tu comprobante de pago en este mismo chat para poder continuar con la agenda.")}}
             send_whatsapp_message(phone_number, pago_info)
-            user_data["stage"] = "esperando_comprobante"
             user_data["timestamp"] = datetime.now()
         else:
             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "El formato del correo es incorrecto. Por favor, inténtalo de nuevo."}})
 
     elif user_data["stage"] == "esperando_comprobante":
-        if not is_media:
-            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "❌ Por favor, sube un archivo (imagen o PDF) como comprobante de pago, no texto."}})
-            return
-        # El webhook manejará la lógica de éxito para un archivo válido
+        # Esta etapa se maneja en el webhook por separado, pero la lógica de la conversación aquí
+        # debe avanzar al siguiente paso de manera automática una vez que se recibe el archivo.
+        # Aquí no se hace nada, el webhook es el que cambia el estado.
+        pass
 
     elif user_data["stage"] == "esperando_fecha_disponibilidad":
         try:
@@ -570,11 +568,11 @@ def process_user_message(phone_number, message_body, is_media=False):
             if available_slots:
                 slots_text = "\n".join([f"⏰ {slot}" for slot in available_slots])
                 user_info["fecha_elegida"] = fecha_str
+                user_data["stage"] = "esperando_hora"
                 user_data_storage[phone_number] = user_info
                 
                 menu_disponibilidad = {"type": "text", "text": {"body": f"✅ La duración de la cita para '{servicio_nombre}' es de {duracion} minutos.\n\nHorarios disponibles para el {fecha_str}:\n\n{slots_text}\n\nPor favor, responde con la hora que prefieras (ej: 10:00)."}}
                 send_whatsapp_message(phone_number, menu_disponibilidad)
-                user_data["stage"] = "esperando_hora"
             else:
                 send_whatsapp_message(phone_number, {"type": "text", "text": {"body": f"❌ Lo sentimos, no hay horarios disponibles para el {fecha_str}. Por favor, elige otra fecha."}})
         except ValueError:
@@ -585,29 +583,21 @@ def process_user_message(phone_number, message_body, is_media=False):
             hora_str = message_body.strip()
             fecha_str = user_info.get("fecha_elegida")
             if not fecha_str:
-                raise ValueError("Fecha no guardada en el estado.")
+                send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "❌ Hubo un error. Por favor, reinicia la conversación enviando 'hola'."}})
+                return
             
             fecha_hora = datetime.strptime(f"{fecha_str} {hora_str}", "%Y-%m-%d %H:%M")
+            duracion = DURACIONES_PRIMERA_VEZ.get(user_data["servicio"], 60)
+            available_slots = get_available_slots(fecha_str, duracion)
+            
+            if hora_str not in available_slots:
+                send_whatsapp_message(phone_number, {"type": "text", "text": {"body": f"❌ La hora {hora_str} no está disponible. Por favor, elige una de las opciones que te mostramos."}})
+                return
+            
+            servicio_nombre = SERVICIOS_NOMBRES.get(user_data["servicio"], "Consulta")
+            especialista_key = user_data.get("especialista", "1")
+            especialista_nombre = ESPECIALISTAS_NOMBRES.get(especialista_key, "No definido")
 
-            tipo_cita = user_data.get("tipo")
-            
-            if tipo_cita == "primera_vez":
-                duracion = DURACIONES_PRIMERA_VEZ.get(user_data["servicio"], 60)
-                servicio_nombre = SERVICIOS_NOMBRES.get(user_data["servicio"], "Consulta")
-                especialista_key = user_data.get("especialista", "1")
-                especialista_nombre = ESPECIALISTAS_NOMBRES.get(especialista_key, "No definido")
-            elif tipo_cita == "subsecuente":
-                duracion = DURACIONES_SUBSECUENTE.get(user_data["servicio"], 45)
-                servicio_nombre = SERVICIOS_SUB_NOMBRES.get(user_data["servicio"], "Consulta")
-                especialista_nombre = ESPECIALISTAS_NOMBRES.get(user_data.get("especialista"), "No definido") # Revisa si hay especialista
-            
-            # Verificar que la hora seleccionada esté en la lista de disponibles (solo para primera vez)
-            if tipo_cita == "primera_vez":
-                available_slots = get_available_slots(fecha_str, duracion)
-                if hora_str not in available_slots:
-                     send_whatsapp_message(phone_number, {"type": "text", "text": {"body": f"❌ La hora {hora_str} no está disponible. Por favor, elige una de las opciones que te mostramos."}})
-                     return
-            
             nombre_paciente = user_info.get('nombre', 'Paciente Anónimo')
             descripcion = f"Paciente: {nombre_paciente}\nTeléfono: {user_info.get('telefono', 'No proporcionado')}\nServicio: {servicio_nombre}\nEspecialista: {especialista_nombre}".strip()
 
@@ -615,36 +605,37 @@ def process_user_message(phone_number, message_body, is_media=False):
                 f"Cita - {servicio_nombre} con {especialista_nombre}",
                 fecha_hora, duracion, descripcion
             )
+            
             send_appointment_email(
                 user_info.get('correo'), EMAIL_ADDRESS, servicio_nombre, nombre_paciente,
                 user_info.get('telefono'), user_info.get('fecha_nacimiento'),
                 user_info.get('edad'), especialista_nombre,
                 fecha_hora.strftime("%Y-%m-%d"), fecha_hora.strftime("%H:%M")
             )
-
+            
             send_whatsapp_message(phone_number, CONFIRMACION)
             cita_detalle = {"type": "text", "text": {"body": f"📅 CONFIRMACIÓN DE CITA\n\nServicio: {servicio_nombre}\nEspecialista: {especialista_nombre}\nFecha y hora: {fecha_hora.strftime('%Y-%m-%d %H:%M')}\nDuración estimada: {duracion} minutos"}}
             send_whatsapp_message(phone_number, cita_detalle)
             
             if phone_number in user_state: del user_state[phone_number]
             if phone_number in user_data_storage: del user_data_storage[phone_number]
-
+            
         except ValueError:
             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, envía la hora en formato HH:MM.\nEj: 10:00"}})
 
-    # === SUBSECUENTE (CORREGIDO SIN DISPONIBILIDAD) ===
+    # === Flujo de subsecuente (simplificado y sin validación de disponibilidad) ===
     elif user_data["stage"] == "servicio_subsecuente":
         if message_body in ["1", "2", "3", "4", "5", "6"]:
             user_data["servicio"] = message_body
             user_data["stage"] = "esperando_nombre_sub"
             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, envía tu nombre completo."}})
         elif message_body == "7":
-            user_data["stage"] = "otros_opciónes_sub"
+            user_data["stage"] = "otros_opciones_sub"
             send_whatsapp_message(phone_number, OTROS_opciónES)
         else:
             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, elige una opción válida (1-7)."}})
 
-    elif user_data["stage"] == "otros_opciónes_sub":
+    elif user_data["stage"] == "otros_opciones_sub":
         if message_body == "3":
             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Conectando con América... Un miembro del equipo te contactará pronto."}})
             user_data["stage"] = "start"
@@ -661,10 +652,13 @@ def process_user_message(phone_number, message_body, is_media=False):
         send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Gracias. Ahora, por favor, envía tu número de teléfono."}})
     
     elif user_data["stage"] == "esperando_telefono_sub":
-        user_info["telefono"] = message_body.strip()
-        user_data_storage[phone_number] = user_info
-        user_data["stage"] = "esperando_fecha_nacimiento_sub"
-        send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, envía tu fecha de nacimiento (DD-MM-AAAA)."}})
+        if re.match(r'^\d{10,}$', re.sub(r'\D', '', message_body)):
+            user_info["telefono"] = re.sub(r'\D', '', message_body)
+            user_data["stage"] = "esperando_fecha_nacimiento_sub"
+            user_data_storage[phone_number] = user_info
+            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, envía tu fecha de nacimiento (DD-MM-AAAA)."}})
+        else:
+            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, ingresa un número de teléfono válido (al menos 10 dígitos)."}})
 
     elif user_data["stage"] == "esperando_fecha_nacimiento_sub":
         user_info["fecha_nacimiento"] = message_body.strip()
@@ -673,20 +667,21 @@ def process_user_message(phone_number, message_body, is_media=False):
         send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por último, ¿cuántos años tienes?"}})
 
     elif user_data["stage"] == "esperando_edad_sub":
-        user_info["edad"] = message_body.strip()
-        user_data_storage[phone_number] = user_info
-        user_data["stage"] = "esperando_correo_sub"
-        send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Gracias. Ahora, por favor, envíanos tu correo electrónico para enviarte la confirmación."}})
+        if message_body.isdigit():
+            user_info["edad"] = message_body.strip()
+            user_data_storage[phone_number] = user_info
+            user_data["stage"] = "esperando_correo_sub"
+            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Gracias. Ahora, por favor, envíanos tu correo electrónico para enviarte la confirmación."}})
+        else:
+            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, ingresa tu edad en números."}})
 
     elif user_data["stage"] == "esperando_correo_sub":
         email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', message_body)
         if email_match:
             user_info["correo"] = email_match.group(0)
-            user_data_storage[phone_number] = user_info
-            
-            # Pedir fecha y hora en un solo mensaje para subsecuentes
-            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Perfecto, ahora por favor, dinos qué fecha y hora te gustaría agendar (ej: 2025-09-15 10:00)."}})
             user_data["stage"] = "esperando_fecha_hora_sub"
+            user_data_storage[phone_number] = user_info
+            send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Perfecto, ahora por favor, dinos qué fecha y hora te gustaría agendar (ej: 2025-09-15 10:00)."}})
         else:
             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "El formato del correo es incorrecto. Por favor, inténtalo de nuevo."}})
 
@@ -694,23 +689,21 @@ def process_user_message(phone_number, message_body, is_media=False):
         try:
             fecha_hora_str = message_body.strip()
             fecha_hora = datetime.strptime(fecha_hora_str, "%Y-%m-%d %H:%M")
-            
             tipo_cita = user_data.get("tipo")
             servicio_key = user_data.get("servicio", "1")
             
-            if tipo_cita == "subsecuente":
-                duracion = DURACIONES_SUBSECUENTE.get(servicio_key, 45)
-                servicio_nombre = SERVICIOS_SUB_NOMBRES.get(servicio_key, "Consulta")
-                especialista_nombre = ESPECIALISTAS_NOMBRES.get(user_data.get("especialista"), "No definido")
+            duracion = DURACIONES_SUBSECUENTE.get(servicio_key, 45)
+            servicio_nombre = SERVICIOS_SUB_NOMBRES.get(servicio_key, "Consulta")
+            especialista_nombre = "No definido"
             
             nombre_paciente = user_info.get('nombre', 'Paciente Anónimo')
             descripcion = f"Paciente: {nombre_paciente}\nTeléfono: {user_info.get('telefono', 'No proporcionado')}\nServicio: {servicio_nombre}\nEspecialista: {especialista_nombre}".strip()
             
-            # Agendar directamente sin validar disponibilidad
             crear_evento_google_calendar(
-                f"Cita - {servicio_nombre} con {especialista_nombre}",
+                f"Cita - {servicio_nombre} (Subsecuente)",
                 fecha_hora, duracion, descripcion
             )
+            
             send_appointment_email(
                 user_info.get('correo'), EMAIL_ADDRESS, servicio_nombre, nombre_paciente,
                 user_info.get('telefono'), user_info.get('fecha_nacimiento'),
@@ -719,16 +712,15 @@ def process_user_message(phone_number, message_body, is_media=False):
             )
             
             send_whatsapp_message(phone_number, CONFIRMACION)
-            cita_detalle = {"type": "text", "text": {"body": f"📅 CONFIRMACIÓN DE CITA\n\nServicio: {servicio_nombre}\nEspecialista: {especialista_nombre}\nFecha y hora: {fecha_hora.strftime('%Y-%m-%d %H:%M')}\nDuración estimada: {duracion} minutos"}}
+            cita_detalle = {"type": "text", "text": {"body": f"📅 CONFIRMACIÓN DE CITA\n\nServicio: {servicio_nombre}\nFecha y hora: {fecha_hora.strftime('%Y-%m-%d %H:%M')}\nDuración estimada: {duracion} minutos"}}
             send_whatsapp_message(phone_number, cita_detalle)
             
             if phone_number in user_state: del user_state[phone_number]
             if phone_number in user_data_storage: del user_data_storage[phone_number]
-
         except ValueError:
             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, envía la fecha y hora en el formato correcto: AAAA-MM-DD HH:MM. Ej: 2025-09-15 10:00"}})
 
-    # === OTROS FLUJOS ===
+    # === Otros flujos ===
     elif user_data["stage"] == "atencion_cliente":
         if message_body == "1": send_whatsapp_message(phone_number, COSTOS)
         elif message_body == "2": send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Conectando con América... Un miembro del equipo te contactará pronto."}})
@@ -738,11 +730,9 @@ def process_user_message(phone_number, message_body, is_media=False):
         if message_body == "1": send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Por favor, completa el formulario:\n🔗 [Formulario de facturación](https://docs.google.com/forms/d/e/1FAIpQLSfr1WWXWQGx4sZj3_0FnIp6XWBb1mol4GfVGfymflsRI0E5pA/viewform)"}})
         elif message_body == "2": send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "Para dudas de facturación, escribe a:\n📧 lcastillo@gbcasesoria.mx"}})
         user_data["stage"] = "start"
-
+    
+    # Manejo de casos no esperados
     else:
-        user_data["stage"] = "start"
-
-    if user_data["stage"] == "start":
         send_whatsapp_message(phone_number, WELCOME_MESSAGE)
         user_data["stage"] = "option_selected"
 
@@ -761,6 +751,7 @@ def webhook():
             return 'Verificación fallida', 403
     elif request.method == 'POST':
         try:
+            # Línea añadida para depuración
             print("Datos brutos de la solicitud:", request.get_data())
             
             data = request.get_json()
@@ -781,7 +772,9 @@ def webhook():
                                     mime_type = message['document']['mime_type']
                                     is_media = True
                                 
+                                # Manejar el comprobante de pago
                                 if user_state.get(phone_number, {}).get("stage") == "esperando_comprobante":
+                                    # Lógica de timeout dentro del webhook, se ejecuta con cada mensaje
                                     timestamp = user_state[phone_number].get("timestamp")
                                     if timestamp and (datetime.now() - timestamp).total_seconds() > 300:
                                         send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "⏰ Tu tiempo para enviar el comprobante ha expirado. Por favor, reinicia la conversación."}})
@@ -795,6 +788,7 @@ def webhook():
                                         else:
                                             send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "❌ El formato del archivo no es válido. Por favor, sube una imagen (PNG, JPG) o un PDF."}})
                                     else:
+                                        # Si se espera un archivo y se envía texto, se informa
                                         send_whatsapp_message(phone_number, {"type": "text", "text": {"body": "❌ Por favor, sube un archivo (imagen o PDF) como comprobante de pago, no texto."}})
                                         
                                 elif message_body:
